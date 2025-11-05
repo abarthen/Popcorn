@@ -27,60 +27,84 @@ class PlexAPI:
     
     def fetch_movies(self):
         try:
-            movies_section = None
-            for section in self.plex.library.sections():
-                if section.type == 'movie':
-                    movies_section = section
-                    break
-            
-            if not movies_section:
-                logger.error("No movie library found in Plex")
-                return []
-            
-            logger.info(f"Fetching movies from library: {movies_section.title}")
-            movies = movies_section.all()
-            
+            # Check if specific library names are configured
+            library_names_env = os.getenv('PLEX_LIBRARY_NAMES')
+
+            movies_sections = []
+
+            if library_names_env:
+                # Use specified libraries (comma-separated)
+                desired_library_names = [name.strip() for name in library_names_env.split(',')]
+                logger.info(f"Looking for specified movie libraries: {desired_library_names}")
+
+                for section in self.plex.library.sections():
+                    if section.type == 'movie' and section.title in desired_library_names:
+                        movies_sections.append(section)
+                        logger.info(f"Found specified library: {section.title}")
+
+                if not movies_sections:
+                    logger.error(f"None of the specified libraries found: {desired_library_names}")
+                    available_movie_libs = [s.title for s in self.plex.library.sections() if s.type == 'movie']
+                    logger.error(f"Available movie libraries: {available_movie_libs}")
+                    return []
+            else:
+                # Fallback to first movie library found (original behavior)
+                for section in self.plex.library.sections():
+                    if section.type == 'movie':
+                        movies_sections.append(section)
+                        logger.info(f"Using first movie library found: {section.title}")
+                        break
+
+                if not movies_sections:
+                    logger.error("No movie library found in Plex")
+                    return []
+
+            # Fetch movies from all selected libraries
             movie_data = []
-            for movie in movies:
-                genres = [g.tag for g in movie.genres] if movie.genres else ['Unknown']
-                
-                poster_url = None
-                if hasattr(movie, 'thumb') and movie.thumb:
-                    poster_url = f"{self.base_url}{movie.thumb}?X-Plex-Token={self.token}"
-                
-                # Get landscape art (banner/backdrop)
-                art_url = None
-                if hasattr(movie, 'art') and movie.art:
-                    art_url = f"{self.base_url}{movie.art}?X-Plex-Token={self.token}"
-                
-                # Get audience rating (IMDb, Rotten Tomatoes, etc.)
-                audience_rating = None
-                if hasattr(movie, 'audienceRating') and movie.audienceRating:
-                    audience_rating = float(movie.audienceRating)
-                elif hasattr(movie, 'rating') and movie.rating:
-                    audience_rating = float(movie.rating)
-                
-                # Get cast (top 5 actors)
-                cast = []
-                if hasattr(movie, 'roles') and movie.roles:
-                    cast = [role.tag for role in movie.roles[:5]]
-                cast_str = ', '.join(cast) if cast else None
-                
-                movie_info = {
-                    'title': movie.title,
-                    'plex_id': str(movie.ratingKey),
-                    'duration': int(movie.duration / 60000) if movie.duration else 0,
-                    'genres': genres,
-                    'year': movie.year if hasattr(movie, 'year') else None,
-                    'rating': movie.contentRating if hasattr(movie, 'contentRating') else None,
-                    'content_rating': movie.contentRating if hasattr(movie, 'contentRating') else None,
-                    'audience_rating': audience_rating,
-                    'summary': movie.summary if hasattr(movie, 'summary') else '',
-                    'poster_url': poster_url,
-                    'art_url': art_url,
-                    'cast': cast_str
-                }
-                movie_data.append(movie_info)
+            for movies_section in movies_sections:
+                logger.info(f"Fetching movies from library: {movies_section.title}")
+                movies = movies_section.all()
+
+                for movie in movies:
+                    genres = [g.tag for g in movie.genres] if movie.genres else ['Unknown']
+
+                    poster_url = None
+                    if hasattr(movie, 'thumb') and movie.thumb:
+                        poster_url = f"{self.base_url}{movie.thumb}?X-Plex-Token={self.token}"
+
+                    # Get landscape art (banner/backdrop)
+                    art_url = None
+                    if hasattr(movie, 'art') and movie.art:
+                        art_url = f"{self.base_url}{movie.art}?X-Plex-Token={self.token}"
+
+                    # Get audience rating (IMDb, Rotten Tomatoes, etc.)
+                    audience_rating = None
+                    if hasattr(movie, 'audienceRating') and movie.audienceRating:
+                        audience_rating = float(movie.audienceRating)
+                    elif hasattr(movie, 'rating') and movie.rating:
+                        audience_rating = float(movie.rating)
+
+                    # Get cast (top 5 actors)
+                    cast = []
+                    if hasattr(movie, 'roles') and movie.roles:
+                        cast = [role.tag for role in movie.roles[:5]]
+                    cast_str = ', '.join(cast) if cast else None
+
+                    movie_info = {
+                        'title': movie.title,
+                        'plex_id': str(movie.ratingKey),
+                        'duration': int(movie.duration / 60000) if movie.duration else 0,
+                        'genres': genres,
+                        'year': movie.year if hasattr(movie, 'year') else None,
+                        'rating': movie.contentRating if hasattr(movie, 'contentRating') else None,
+                        'content_rating': movie.contentRating if hasattr(movie, 'contentRating') else None,
+                        'audience_rating': audience_rating,
+                        'summary': movie.summary if hasattr(movie, 'summary') else '',
+                        'poster_url': poster_url,
+                        'art_url': art_url,
+                        'cast': cast_str
+                    }
+                    movie_data.append(movie_info)
             
             logger.info(f"Fetched {len(movie_data)} movies from Plex")
             return movie_data
